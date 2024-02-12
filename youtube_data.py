@@ -1,23 +1,22 @@
 from googleapiclient.discovery import build
 import pymongo
-import psycopg2
+import mysql.connector
 import pandas as pd
+from datetime import timedelta
+from datetime import datetime
 import streamlit as st
 from streamlit_option_menu import option_menu
 
 def api_collect():
 
-    api_key="AIzaSyBUj8yxqCaBmE4aNZfi_2jgfNphdK7Qfsc"
+    api_key="AIzaSyCfneazn8_upXCKvASaWrHY518s5JaNCoY"
     api_service_name = "youtube"
     api_version = "v3"
 
     youtube = build(api_service_name,api_version,developerKey=api_key)
 
     return youtube
-
-
 youtube = api_collect()
-
 
 
 def get_channel_details(channel_id):
@@ -35,7 +34,6 @@ def get_channel_details(channel_id):
                             Channel_Description = i['snippet']['description'],
                             Playlist_Id = i['contentDetails']['relatedPlaylists']['uploads'] )
         return data
-        
 
 def get_video_idS(channel_id):
      Video_Ids = []
@@ -58,6 +56,31 @@ def get_video_idS(channel_id):
                break 
      return  Video_Ids
 
+def convert_duration(duration_str):
+    duration_str = duration_str.replace('PT', '')
+    
+    hours, minutes, seconds = 0, 0, 0
+    
+    if 'H' in duration_str:
+        hours_index = duration_str.index('H')
+        hours = int(duration_str[:hours_index])
+        duration_str = duration_str[hours_index+1:]
+    
+    if 'M' in duration_str:
+        minutes_index = duration_str.index('M')
+        minutes = int(duration_str[:minutes_index])
+        duration_str = duration_str[minutes_index+1:]
+    
+    if 'S' in duration_str:
+        seconds_index = duration_str.index('S')
+        seconds = int(duration_str[:seconds_index])
+    
+    duration = timedelta(hours=hours, minutes=minutes, seconds=seconds)
+    return str(duration)
+
+def convert_to_datetime(published_date):
+    dt = datetime.fromisoformat(published_date.replace('Z', '+00:00'))
+    return dt.strftime('%Y-%m-%d %H:%M:%S')
 
 def get_video_details(video_ids):
     Video_Data=[]
@@ -74,18 +97,17 @@ def get_video_details(video_ids):
                         Video_Id = item['id'],
                         Video_Name = item['snippet']['title'],
                         Video_Description = item['snippet'].get('description'),
-                        Tags = item['snippet'].get('tags'),
-                        Published_Date = item['snippet']['publishedAt'],
+                        Tags ="".join(item['snippet'].get('tags',["NA"])),
+                        Published_Date = convert_to_datetime(item['snippet']['publishedAt']),
                         View_Count = item['statistics'].get('viewCount'),
                         Like_Count = item['statistics'].get('likeCount'),
                         Favorite_Count = item['statistics']['favoriteCount'],
                         Comment_Count = item['statistics'].get('commentCount'),
-                        Duration = item['contentDetails']['duration'],
+                        Duration = convert_duration(item['contentDetails']['duration']),
                         Thumbnail = item['snippet']['thumbnails']['default']['url'],
                         Caption_Status = item['contentDetails']['caption'])
             Video_Data.append(data1)
     return Video_Data
-
 
 def get_comment_details(video_ids):
     Comment_data = []
@@ -102,7 +124,7 @@ def get_comment_details(video_ids):
                             Comment_Id = item['snippet']['topLevelComment']['id'],
                             Comment_Text =item['snippet']['topLevelComment']['snippet']['textDisplay'],
                             Comment_Author =item['snippet']['topLevelComment']['snippet']['authorDisplayName'],
-                            Comment_Published_Date =item['snippet']['topLevelComment']['snippet']['publishedAt'])
+                            Comment_Published_Date =convert_to_datetime(item['snippet']['topLevelComment']['snippet']['publishedAt']))
                 
                 Comment_data.append(data3)
 
@@ -111,10 +133,8 @@ def get_comment_details(video_ids):
 
     return Comment_data 
 
-
 client = pymongo.MongoClient("mongodb://localhost:27017")
 db=client['youtube_data']
-
 
 def channel_details(channel_id):
     channel_info = get_channel_details(channel_id)
@@ -128,21 +148,13 @@ def channel_details(channel_id):
     
     return 'success'
 
-
 def channel_table():
-    mydb = psycopg2.connect(host ='localhost',
-                        user ='postgres',
-                        password='sathish',
-                        database ='youtube_data',
-                        port ='5432')
-    cursor = mydb.cursor()
-
-
+    mydb = mysql.connector.connect( host="localhost",user="root",password="sk23",database='youtube_data')
+    cursor = mydb.cursor(buffered=True)
+    
     drop_query = '''drop table if exists channels'''
     cursor.execute(drop_query)
     mydb.commit()
-
-
 
     create_query='''create table if not exists channels(Channel_Name varchar(50),
                                                         Channel_Id varchar(100) primary key,
@@ -154,16 +166,12 @@ def channel_table():
     cursor.execute(create_query)
     mydb.commit()
 
-
-
     ch_list =[]
     db=client['youtube_data']
     collection1 = db["channel_details"]
     for ch_data in collection1.find({},{'_id':0,'channel_information':1}):
         ch_list.append(ch_data['channel_information'])     
     df = pd.DataFrame(ch_list)  
-
-
 
     for index,row in df.iterrows():
         insert_query = '''insert into channels(Channel_Name,
@@ -188,21 +196,13 @@ def channel_table():
         cursor.execute(insert_query,values)
         mydb.commit()
 
-
 def video_table(): 
-    mydb = psycopg2.connect(host ='localhost',
-                        user ='postgres',
-                        password='sathish',
-                        database ='youtube_data',
-                        port ='5432')
-    cursor = mydb.cursor()
-
+    mydb = mysql.connector.connect( host="localhost",user="root",password="sk23",database='youtube_data')
+    cursor = mydb.cursor(buffered=True)
 
     drop_query = '''drop table if exists videos'''
     cursor.execute(drop_query)
     mydb.commit()
-
-
 
     create_query='''create table if not exists videos(Channel_Name varchar(100),
                                                     Channel_Id varchar(100),
@@ -210,18 +210,17 @@ def video_table():
                                                     Video_Name varchar(150),
                                                     Video_Description text,
                                                     Tags text,
-                                                    Published_Date timestamp,
+                                                    Published_Date datetime,
                                                     View_Count bigint,
                                                     Like_Count bigint,
                                                     Favorite_Count int,
                                                     Comment_Count int,
-                                                    Duration interval,
+                                                    Duration time,
                                                     Thumbnail varchar(200),
                                                     Caption_Status varchar(50)
                                                         )'''
     cursor.execute(create_query)
     mydb.commit()
-
 
     vi_list =[]
     db=client['youtube_data']
@@ -230,9 +229,6 @@ def video_table():
         for i in range(len(vi_data['video_information'])):
             vi_list.append(vi_data['video_information'][i])     
     df1 =pd.DataFrame(vi_list)  
-
-
-
 
     for index,row in df1.iterrows():
             insert_query = '''insert into videos(Channel_Name,
@@ -271,31 +267,22 @@ def video_table():
             cursor.execute(insert_query,values)
             mydb.commit()
 
-
 def comment_table(): 
-    mydb = psycopg2.connect(host ='localhost',
-                        user ='postgres',
-                        password='sathish',
-                        database ='youtube_data',
-                        port ='5432')
-    cursor = mydb.cursor()
-
+    mydb = mysql.connector.connect( host="localhost",user="root",password="sk23",database='youtube_data')
+    cursor = mydb.cursor(buffered=True)
 
     drop_query = '''drop table if exists comments'''
     cursor.execute(drop_query)
     mydb.commit()
 
-
-
     create_query='''create table if not exists comments(Video_Id varchar(50),
                                                         Comment_Id varchar(100) primary key,
                                                         Comment_Text text,
                                                         Comment_Author varchar(150),
-                                                        Comment_Published_Date timestamp
+                                                        Comment_Published_Date datetime
                                                         )'''
     cursor.execute(create_query)
     mydb.commit()
-
 
     com_list =[]
     db=client['youtube_data']
@@ -304,9 +291,6 @@ def comment_table():
         for i in range(len(com_data['comment_information'])):
             com_list.append(com_data['comment_information'][i])     
     df2 = pd.DataFrame(com_list)  
-
-
-
 
     for index,row in df2.iterrows():
                 insert_query = '''insert into comments(Video_Id,
@@ -326,14 +310,12 @@ def comment_table():
                 cursor.execute(insert_query,values)
                 mydb.commit()
 
-
 def tables():
     channel_table()
     video_table()
     comment_table()
 
     return 'table created'
-
 
 def show_channel_table():
     ch_list =[]
@@ -344,7 +326,6 @@ def show_channel_table():
     df = st.dataframe(ch_list)  
 
     return df
-
 
 def show_video_table():
     vi_list =[]
@@ -357,7 +338,6 @@ def show_video_table():
 
     return df1
 
-
 def show_comment_table() :
     com_list =[]
     db=client['youtube_data']
@@ -368,7 +348,6 @@ def show_comment_table() :
     df2 = st.dataframe(com_list)  
 
     return df2
-
 
 with st.sidebar:
     menu = option_menu(
@@ -399,7 +378,9 @@ if menu == "Get Data":
             insert = channel_details(channel_id)
             st.success(insert)
 
-    
+    if st.button("Transfer the data to Sql"):
+        Table =tables()
+        st.success(Table)
 
 if menu == "Channel Details":
 
@@ -419,13 +400,8 @@ if menu == "Channel Details":
 if menu == "Query":
 
     st.title("Query Data")
-    mydb = psycopg2.connect(host ='localhost',
-                        user ='postgres',
-                        password='sathish',
-                        database ='youtube_data',
-                        port ='5432')
-    cursor = mydb.cursor()
-
+    mydb = mysql.connector.connect( host="localhost",user="root",password="sk23",database='youtube_data')
+    cursor = mydb.cursor(buffered=True)
 
     Question = st.selectbox("Select question",("1. What are the names of all the videos and their corresponding channels?",
                                                     "2. Which channels have the most number of videos, and how many videos do they have?",
