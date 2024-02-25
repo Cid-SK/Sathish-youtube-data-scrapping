@@ -120,7 +120,8 @@ def get_comment_details(video_ids):
             response = request.execute()
 
             for item in response['items']:
-                data3 =dict(Video_Id =item['snippet']['topLevelComment']['snippet']['videoId'],
+                data3 =dict(Channel_Id =item['snippet']['channelId'],
+                            Video_Id =item['snippet']['topLevelComment']['snippet']['videoId'],
                             Comment_Id = item['snippet']['topLevelComment']['id'],
                             Comment_Text =item['snippet']['topLevelComment']['snippet']['textDisplay'],
                             Comment_Author =item['snippet']['topLevelComment']['snippet']['authorDisplayName'],
@@ -148,13 +149,9 @@ def channel_details(channel_id):
     
     return 'success'
 
-def channel_table():
+def channel_table(abc):
     mydb = mysql.connector.connect( host="localhost",user="root",password="sk23",database='youtube_data')
     cursor = mydb.cursor(buffered=True)
-    
-    drop_query = '''drop table if exists channels'''
-    cursor.execute(drop_query)
-    mydb.commit()
 
     create_query='''create table if not exists channels(Channel_Name varchar(50),
                                                         Channel_Id varchar(100) primary key,
@@ -169,9 +166,9 @@ def channel_table():
     ch_list =[]
     db=client['youtube_data']
     collection1 = db["channel_details"]
-    for ch_data in collection1.find({},{'_id':0,'channel_information':1}):
+    for ch_data in collection1.find({"channel_information.Channel_Id": abc},{'_id':0,'channel_information':1}):
         ch_list.append(ch_data['channel_information'])     
-    df = pd.DataFrame(ch_list)  
+    df = pd.DataFrame(ch_list) 
 
     for index,row in df.iterrows():
         insert_query = '''insert into channels(Channel_Name,
@@ -182,7 +179,13 @@ def channel_table():
                                                 Channel_Description,
                                                 Playlist_Id)
                                                 
-                                                values(%s,%s,%s,%s,%s,%s,%s)'''
+                                                values(%s,%s,%s,%s,%s,%s,%s)
+                                                on duplicate key update
+                                                Subscription_Count = values(Subscription_Count),
+                                                Channel_Views = values(Channel_Views),
+                                                Total_Videos = values(Total_Videos),
+                                                Channel_Description = values(Channel_Description),
+                                                Playlist_Id = values(Playlist_Id)'''
         
         values=(row['Channel_Name'],
             row['Channel_Id'],
@@ -196,13 +199,10 @@ def channel_table():
         cursor.execute(insert_query,values)
         mydb.commit()
 
-def video_table(): 
+def video_table(abc): 
     mydb = mysql.connector.connect( host="localhost",user="root",password="sk23",database='youtube_data')
     cursor = mydb.cursor(buffered=True)
 
-    drop_query = '''drop table if exists videos'''
-    cursor.execute(drop_query)
-    mydb.commit()
 
     create_query='''create table if not exists videos(Channel_Name varchar(100),
                                                     Channel_Id varchar(100),
@@ -225,7 +225,7 @@ def video_table():
     vi_list =[]
     db=client['youtube_data']
     collection1 = db["channel_details"]
-    for vi_data in collection1.find({},{'_id':0,'video_information':1}):
+    for vi_data in collection1.find({"video_information.Channel_Id":abc},{'_id':0,'video_information':1}):
         for i in range(len(vi_data['video_information'])):
             vi_list.append(vi_data['video_information'][i])     
     df1 =pd.DataFrame(vi_list)  
@@ -246,7 +246,19 @@ def video_table():
                                                     Thumbnail,
                                                     Caption_Status)
                                             
-                                                    values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)'''
+                                                    values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                                                    on duplicate key update
+                                                    Video_Name = values(Video_Name),
+                                                    Video_Description = values(Video_Description),
+                                                    Tags = values(Tags),
+                                                    Published_Date = values(Published_Date),
+                                                    View_Count = values(View_Count),
+                                                    Like_Count = values(Like_Count),
+                                                    Favorite_Count = values(Favorite_Count),
+                                                    Comment_Count = values(Comment_Count),
+                                                    Duration = values(Duration),
+                                                    Thumbnail = values(Thumbnail),
+                                                    Caption_Status = values(Caption_Status)'''
         
         
             values=(row['Channel_Name'],
@@ -267,15 +279,12 @@ def video_table():
             cursor.execute(insert_query,values)
             mydb.commit()
 
-def comment_table(): 
+def comment_table(abc): 
     mydb = mysql.connector.connect( host="localhost",user="root",password="sk23",database='youtube_data')
     cursor = mydb.cursor(buffered=True)
 
-    drop_query = '''drop table if exists comments'''
-    cursor.execute(drop_query)
-    mydb.commit()
-
-    create_query='''create table if not exists comments(Video_Id varchar(50),
+    create_query='''create table if not exists comments(Channel_Id varchar(100),
+                                                        Video_Id varchar(100),
                                                         Comment_Id varchar(100) primary key,
                                                         Comment_Text text,
                                                         Comment_Author varchar(150),
@@ -287,21 +296,27 @@ def comment_table():
     com_list =[]
     db=client['youtube_data']
     collection1 = db["channel_details"]
-    for com_data in collection1.find({},{'_id':0,'comment_information':1}):
+    for com_data in collection1.find({"comment_information.Channel_Id": abc},{'_id':0,'comment_information':1}):
         for i in range(len(com_data['comment_information'])):
             com_list.append(com_data['comment_information'][i])     
     df2 = pd.DataFrame(com_list)  
 
     for index,row in df2.iterrows():
-                insert_query = '''insert into comments(Video_Id,
+                insert_query = '''insert into comments(Channel_Id,
+                                                Video_Id,
                                                 Comment_Id,
                                                 Comment_Text,
                                                 Comment_Author,
                                                 Comment_Published_Date)
                                     
-                                                values(%s,%s,%s,%s,%s)'''
+                                                values(%s,%s,%s,%s,%s,%s)
+                                                on duplicate key update
+                                                Comment_Text = values(Comment_Text),
+                                                Comment_Author = values(Comment_Author),
+                                                Comment_Published_Date = values(Comment_Published_Date)'''
         
-                values=(row['Video_Id'],
+                values=(row['Channel_Id'],
+                row['Video_Id'],
                 row['Comment_Id'],
                 row['Comment_Text'],
                 row['Comment_Author'],
@@ -310,10 +325,10 @@ def comment_table():
                 cursor.execute(insert_query,values)
                 mydb.commit()
 
-def tables():
-    channel_table()
-    video_table()
-    comment_table()
+def tables(abc):
+    channel_table(abc)
+    video_table(abc)
+    comment_table(abc)
 
     return 'table created'
 
@@ -367,10 +382,10 @@ if menu == "Get Data":
     if st.button("collect and store data"):
         ch_ids = []
         db = client['youtube_data']
-        callection1= db["channel_information"]
-        for ch_data in callection1.find({},{"_id":0,"channel_information":1}):
+        collection1= db["channel_details"]
+        for ch_data in collection1.find({},{"_id":0,"channel_information":1}):
             ch_ids.append(ch_data["channel_information"]["Channel_Id"])
-
+            
         if channel_id in ch_ids:
             st.success("Given channel id datails already exists")
 
@@ -378,9 +393,25 @@ if menu == "Get Data":
             insert = channel_details(channel_id)
             st.success(insert)
 
-    if st.button("Transfer the data to Sql"):
-        Table =tables()
-        st.success(Table)
+
+    abcd = []
+    db = client['youtube_data']
+    collection1 = db["channel_details"]
+    for ch_data in collection1.find({}, {"_id": 0, "channel_information.Channel_Name": 1}):
+        abcd.append(ch_data['channel_information']['Channel_Name'])
+
+    selected_channel = st.selectbox("Select a Channel",abcd)
+
+    abc =[]
+    db=client['youtube_data']
+    collection1 = db["channel_details"]
+    for ii in collection1.find({"channel_information.Channel_Name":selected_channel},{'_id':0,'channel_information.Channel_Id':1}):
+        abc.append(ii['channel_information']['Channel_Id'])
+
+    if st.button("Transfer the data to sql"):
+            Table = tables(abc[0])
+            st.success(Table)
+
 
 if menu == "Channel Details":
 
